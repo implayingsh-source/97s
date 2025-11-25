@@ -1,6 +1,6 @@
 /**
  * 97s - Discord Bot Core
- * Version: 2.1.0 (Tickets & Welcome Update)
+ * Version: 2.1.0 (Fixed)
  * Theme: Pink (#db2777) | Black | Gray
  */
 
@@ -17,10 +17,11 @@ const fs = require('fs');
 
 // --- CONFIGURATION ---
 const CONFIG = {
+    // We use the environment variable 'TOKEN' first.
+    // If running locally without .env, you can paste the token here as a fallback string.
     TOKEN: process.env.TOKEN || 'YOUR_BOT_TOKEN_HERE', 
     PREFIX: '!',
     COLOR: 0xdb2777,
-    // Change this to the exact name of your welcome channel
     WELCOME_CHANNEL_NAME: 'welcome' 
 };
 
@@ -29,7 +30,12 @@ const DB_FILE = './database.json';
 let db = { xp: {} };
 
 if (fs.existsSync(DB_FILE)) {
-    db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    try {
+        db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    } catch (e) {
+        console.error("Database corrupted, resetting...");
+        db = { xp: {} };
+    }
 }
 
 function saveDB() {
@@ -42,7 +48,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers, // Required for Welcome messages
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildPresences
     ]
 });
@@ -73,7 +79,7 @@ client.on('guildMemberAdd', async (member) => {
             { name: 'User ID', value: `${member.id}`, inline: true },
             { name: 'Member Count', value: `${member.guild.memberCount}`, inline: true }
         )
-        .setImage('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Z5eXhmZ3F4aHZ5eXhmZ3F4aHZ5eXhmZ3F4aHZ5eXhmZ3F4aCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/L1R1TVTh2RhtDbmCjE/giphy.gif') // Cyberpunk city gif
+        .setImage('https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3Z5eXhmZ3F4aHZ5eXhmZ3F4aHZ5eXhmZ3F4aHZ5eXhmZ3F4aCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/L1R1TVTh2RhtDbmCjE/giphy.gif')
         .setFooter({ text: '97s Systems • Access Granted' });
 
     channel.send({ content: `<@${member.id}>`, embeds: [embed] });
@@ -83,7 +89,6 @@ client.on('guildMemberAdd', async (member) => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // XP System
     handleLeveling(message);
 
     if (!message.content.startsWith(CONFIG.PREFIX)) return;
@@ -106,29 +111,18 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embed] });
     }
 
-    // !ticket (Creates a private channel)
+    // !ticket
     if (command === 'ticket') {
-        // Check if ticket already exists
         const existingChannel = message.guild.channels.cache.find(c => c.name === `ticket-${message.author.username.toLowerCase()}`);
         if (existingChannel) return message.reply(`❌ You already have an open ticket: ${existingChannel}`);
 
-        // Create Channel
         const channel = await message.guild.channels.create({
             name: `ticket-${message.author.username}`,
             type: ChannelType.GuildText,
             permissionOverwrites: [
-                {
-                    id: message.guild.id, // @everyone
-                    deny: [PermissionsBitField.Flags.ViewChannel],
-                },
-                {
-                    id: message.author.id, // The user
-                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
-                },
-                {
-                    id: client.user.id, // The bot
-                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
-                },
+                { id: message.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: message.author.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
             ],
         });
 
@@ -141,7 +135,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`✅ Ticket created: ${channel}`);
     }
 
-    // !close (Deletes the ticket)
+    // !close
     if (command === 'close') {
         if (!message.channel.name.startsWith('ticket-')) {
             return message.reply("❌ You can only use this command inside a ticket channel.");
