@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Menu, X, ArrowRight, Shield, Music, Zap, Bot, MessageSquare, 
   Github, Twitter, ExternalLink, ChevronDown, LayoutDashboard, 
-  Settings, Users, Activity, LogOut, Save, Volume2, AlertTriangle, Disc 
+  Settings, Users, Activity, LogOut, Save, Volume2, AlertTriangle 
 } from 'lucide-react';
 
 export default function App() {
@@ -92,7 +92,7 @@ function LandingPage({ onLogin }) {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-500 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
             </span>
-            System Online v2.4.0
+            System Online
           </div>
           
           <h1 className="text-5xl md:text-8xl font-black text-white tracking-tighter mb-6 leading-tight">
@@ -216,7 +216,7 @@ function Dashboard({ onLogout }) {
   return (
     <div className="flex h-screen bg-black overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col hidden md:flex">
+      <aside className="w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col">
         <div className="p-6 flex items-center gap-3 border-b border-zinc-900">
           <div className="w-8 h-8 bg-pink-600 rounded-lg flex items-center justify-center text-white font-bold shadow-[0_0_10px_rgba(219,39,119,0.5)]">
             97
@@ -300,11 +300,11 @@ function Dashboard({ onLogout }) {
               <div className="absolute top-0 right-0 w-32 h-32 bg-pink-600/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
               <div className="flex justify-between items-start mb-4 relative z-10">
                 <div className="p-3 bg-zinc-900 rounded-lg border border-zinc-800 text-pink-500">
-                  <Disc size={24} />
+                  <Music size={24} />
                 </div>
                 <Toggle checked={toggleMusic} onChange={() => setToggleMusic(!toggleMusic)} />
               </div>
-              <h3 className="text-xl font-bold text-white mb-2 relative z-10">Audio Engine</h3>
+              <h3 className="text-xl font-bold text-white mb-2 relative z-10">Music Player</h3>
               <p className="text-zinc-500 text-sm mb-4 relative z-10">High quality music playback from multiple sources with equalizer support.</p>
               <div className="flex gap-2 relative z-10">
                  <span className="px-2 py-1 bg-zinc-900 rounded text-xs text-zinc-400 border border-zinc-800">Spotify</span>
