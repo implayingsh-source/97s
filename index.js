@@ -1,6 +1,6 @@
 /**
- * 97s - Discord Bot Core "The Ultimate Merge"
- * Version: 6.0.0 (Leviathan Features + Dashboard API)
+ * 97s - Discord Bot Core "Bleed Edition"
+ * Version: 8.0.0 (Snipe, Roles, Banner, Clean UI)
  * Theme: Bleed Pink (#db2777) | Dark Mode
  * Trigger: "," (Comma)
  */
@@ -9,28 +9,26 @@ require('dotenv').config();
 const { 
     Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, 
     ChannelType, ActivityType, ButtonBuilder, ActionRowBuilder, 
-    ButtonStyle, Events 
+    ButtonStyle, Events, Collection 
 } = require('discord.js');
 const fs = require('fs');
-const express = require('express');
-const cors = require('cors');
+const ms = require('ms');
+const axios = require('axios');
+const http = require('http');
+const moment = require('moment');
 
 // --- 1. CORE CONFIGURATION ---
 const CONFIG = {
     TOKEN: process.env.TOKEN || 'YOUR_BOT_TOKEN_HERE',
     PREFIX: ',', 
     COLOR: 0xdb2777,
-    footer: '97s Systems • Leviathan v6.0'
+    footer: '97s' // Minimal footer
 };
 
 // --- 2. DATABASE & STATE ---
 const DB_FILE = './database.json';
-let db = { 
-    xp: {}, economy: {}, afk: {}, 
-    warns: {}, giveaways: [] 
-};
+let db = { xp: {}, economy: {}, afk: {}, warns: {}, mutes: {} };
 
-// Load DB safely
 if (fs.existsSync(DB_FILE)) { 
     try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } 
     catch { console.log('[DB] Corrupt file, resetting.'); } 
@@ -38,6 +36,8 @@ if (fs.existsSync(DB_FILE)) {
 const saveDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
 const musicQueue = new Map();
+// SNIPE MEMORY (New Feature)
+const snipes = new Collection();
 
 // --- 3. INITIALIZATION ---
 const client = new Client({
@@ -52,97 +52,64 @@ const client = new Client({
     ]
 });
 
-// --- 4. EXPRESS API (Dashboard Backend) ---
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// API: Stats Overview
-app.get('/api/stats', (req, res) => {
-    res.json({
-        servers: client.guilds.cache.size,
-        users: client.guilds.cache.reduce((a, g) => a + g.memberCount, 0),
-        uptime: client.uptime,
-        ping: client.ws.ping
-    });
-});
-
-// API: Leaderboard
-app.get('/api/leaderboard', (req, res) => {
-    const sorted = Object.entries(db.xp)
-        .map(([id, data]) => ({ id, ...data }))
-        .sort((a, b) => b.xp - a.xp)
-        .slice(0, 10);
-    
-    Promise.all(sorted.map(async (entry) => {
-        try {
-            const user = await client.users.fetch(entry.id);
-            return { ...entry, username: user.username, avatar: user.displayAvatarURL() };
-        } catch { return { ...entry, username: 'Unknown', avatar: null }; }
-    })).then(data => res.json(data));
-});
-
-// API: Health Check (Required for Render)
-app.get('/', (req, res) => res.send('97s Leviathan API is Online. 🟢'));
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[API] Server running on port ${PORT}`));
-
-// --- 5. UTILITY FUNCTIONS ---
-const sendEmbed = (channel, title, desc, footer = true) => {
+// --- 4. UTILITY FUNCTIONS ---
+// Updated to allow disabling footer completely
+const sendEmbed = (channel, title, desc, footerText = null) => {
     const embed = new EmbedBuilder()
         .setDescription(title ? `**${title}**\n${desc}` : desc)
         .setColor(CONFIG.COLOR);
-    if (footer) embed.setFooter({ text: CONFIG.footer });
+    
+    if (footerText) {
+        embed.setFooter({ text: footerText });
+    }
+    
     return channel.send({ embeds: [embed] });
 };
 
 const sendError = (channel, error) => {
     const embed = new EmbedBuilder()
-        .setDescription(`✖ **Error:** ${error}`)
+        .setDescription(`✖ ${error}`)
         .setColor(0x2f3136);
     return channel.send({ embeds: [embed] });
 };
 
-// --- 6. EVENT LISTENERS ---
+// --- 5. EVENT LISTENERS ---
 
 client.once(Events.ClientReady, () => {
-    console.log(`[SYSTEM] 97s Leviathan is online as ${client.user.tag}`);
+    console.log(`[SYSTEM] 97s is online as ${client.user.tag}`);
     
-    let i = 0;
-    const statuses = [
-        { name: `,help | Dashboard Live`, type: ActivityType.Streaming, url: 'https://twitch.tv/monstercat' },
-        { name: `${client.guilds.cache.size} Servers`, type: ActivityType.Watching },
-        { name: 'Security Protocols', type: ActivityType.Listening }
-    ];
-    setInterval(() => {
-        client.user.setPresence({ activities: [statuses[i]], status: 'dnd' });
-        i = (i + 1) % statuses.length;
-    }, 10000);
+    // SET STATUS TO "ky owns me"
+    client.user.setPresence({ 
+        activities: [{ name: 'ky owns me', type: ActivityType.Streaming, url: 'https://twitch.tv/monstercat' }], 
+        status: 'dnd' 
+    });
+});
+
+// SNIPE LISTENER (Detect deleted messages)
+client.on('messageDelete', message => {
+    if (message.author.bot) return;
+    snipes.set(message.channel.id, {
+        content: message.content,
+        author: message.author,
+        image: message.attachments.first() ? message.attachments.first().proxyURL : null,
+        time: Date.now()
+    });
 });
 
 // Passive Logic (AFK & XP)
 client.on('messageCreate', (message) => {
     if (message.author.bot) return;
 
-    // XP
-    if (!db.xp[message.author.id]) db.xp[message.author.id] = { xp: 0, level: 0 };
-    db.xp[message.author.id].xp += 15;
-    const nextLvl = (db.xp[message.author.id].level + 1) * 100;
-    if (db.xp[message.author.id].xp >= nextLvl) {
-        db.xp[message.author.id].level++;
-        db.xp[message.author.id].xp = 0;
-        message.channel.send(`🎉 ${message.author} reached **Level ${db.xp[message.author.id].level}**!`);
-    }
-
     // Economy Passive
     if (!db.economy[message.author.id]) db.economy[message.author.id] = { cash: 0, bank: 0 };
     if (Math.random() > 0.95) db.economy[message.author.id].cash += 5;
 
     // AFK Check
-    message.mentions.users.forEach(u => {
-        if (db.afk[u.id]) sendEmbed(message.channel, null, `💤 **${u.username}** is AFK: ${db.afk[u.id]}`);
-    });
+    if (message.mentions.users.size > 0) {
+        message.mentions.users.forEach(u => {
+            if (db.afk[u.id]) sendEmbed(message.channel, null, `💤 **${u.username}** is AFK: ${db.afk[u.id]}`, CONFIG.footer);
+        });
+    }
     if (db.afk[message.author.id]) {
         delete db.afk[message.author.id];
         message.reply("👋 I removed your AFK status.").then(m => setTimeout(() => m.delete(), 5000));
@@ -158,13 +125,83 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(CONFIG.PREFIX.length).trim().split(/ +/);
     const cmd = args.shift().toLowerCase();
 
-    // --- A. MODERATION ---
+    // --- A. BLEED FEATURES ---
+
+    // ,snipe
+    if (cmd === 'snipe' || cmd === 's') {
+        const snipe = snipes.get(message.channel.id);
+        if (!snipe) return sendError(message.channel, 'There is nothing to snipe.');
+        
+        const embed = new EmbedBuilder()
+            .setAuthor({ name: snipe.author.tag, iconURL: snipe.author.displayAvatarURL() })
+            .setDescription(snipe.content || 'No text content.')
+            .setColor(CONFIG.COLOR)
+            .setFooter({ text: `Deleted ${moment(snipe.time).fromNow()}` });
+        
+        if (snipe.image) embed.setImage(snipe.image);
+        
+        message.channel.send({ embeds: [embed] });
+    }
+
+    // ,role @user @role
+    if (cmd === 'role') {
+        if (!checkPerms(message, 'ManageRoles')) return;
+        const member = message.mentions.members.first();
+        const role = message.mentions.roles.first();
+
+        if (!member || !role) return sendError(message.channel, 'Usage: `,role @user @role`');
+
+        if (member.roles.cache.has(role.id)) {
+            await member.roles.remove(role);
+            sendEmbed(message.channel, null, `**${member.user.username}** has lost the **${role.name}** role.`, CONFIG.footer);
+        } else {
+            await member.roles.add(role);
+            sendEmbed(message.channel, null, `**${member.user.username}** has been given the **${role.name}** role.`, CONFIG.footer);
+        }
+    }
+
+    // ,av / ,banner
+    if (cmd === 'av' || cmd === 'avatar') {
+        const u = message.mentions.users.first() || message.author;
+        const embed = new EmbedBuilder().setTitle(u.tag).setImage(u.displayAvatarURL({ dynamic: true, size: 1024 })).setColor(CONFIG.COLOR);
+        message.channel.send({ embeds: [embed] });
+    }
+
+    if (cmd === 'banner') {
+        const u = message.mentions.users.first() || message.author;
+        // Need to fetch user to get banner
+        const fetchedUser = await client.users.fetch(u.id, { force: true });
+        if (!fetchedUser.banner) return sendError(message.channel, 'User has no banner.');
+        
+        const embed = new EmbedBuilder().setTitle(u.tag).setImage(fetchedUser.bannerURL({ dynamic: true, size: 1024 })).setColor(CONFIG.COLOR);
+        message.channel.send({ embeds: [embed] });
+    }
+
+    // ,whois (Detailed)
+    if (cmd === 'whois' || cmd === 'ui') {
+        const user = message.mentions.users.first() || message.author;
+        const member = message.guild.members.cache.get(user.id);
+        
+        const embed = new EmbedBuilder()
+            .setAuthor({ name: user.tag, iconURL: user.displayAvatarURL() })
+            .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+            .setColor(CONFIG.COLOR)
+            .addFields(
+                { name: 'Joined', value: `<t:${parseInt(member.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: 'Registered', value: `<t:${parseInt(user.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: `Roles [${member.roles.cache.size - 1}]`, value: member.roles.cache.filter(r => r.id !== message.guild.id).sort((a, b) => b.position - a.position).map(r => r).join(" ").slice(0, 1024) || "None" }
+            )
+            .setFooter({ text: `ID: ${user.id}` });
+        message.channel.send({ embeds: [embed] });
+    }
+
+    // --- B. MODERATION ---
     if (cmd === 'kick') {
         if (!checkPerms(message, 'KickMembers')) return;
         const target = message.mentions.members.first();
         if (!target || !target.kickable) return sendError(message.channel, 'Cannot kick user.');
         await target.kick(args.slice(1).join(' ') || 'N/A');
-        return sendEmbed(message.channel, 'KICKED', `👢 **${target.user.tag}** removed.`);
+        return sendEmbed(message.channel, 'KICKED', `👢 **${target.user.tag}** removed.`, CONFIG.footer);
     }
 
     if (cmd === 'ban') {
@@ -172,17 +209,30 @@ client.on('messageCreate', async (message) => {
         const target = message.mentions.members.first();
         if (!target) return sendError(message.channel, 'Mention user.');
         await target.ban({ reason: args.slice(1).join(' ') });
-        return sendEmbed(message.channel, 'BANNED', `🔨 **${target.user.tag}** banned.`);
+        return sendEmbed(message.channel, 'BANNED', `🔨 **${target.user.tag}** banned.`, CONFIG.footer);
     }
 
-    if (cmd === 'nuke') {
-        if (!checkPerms(message, 'ManageChannels')) return;
-        const pos = message.channel.position;
-        const clone = await message.channel.clone();
-        await message.channel.delete();
-        await clone.setPosition(pos);
-        await clone.send('https://media.giphy.com/media/HhTXt43pk1I1W/giphy.gif');
-        return sendEmbed(clone, 'NUKED', 'Channel wiped.');
+    if (cmd === 'mute') {
+        if (!checkPerms(message, 'ModerateMembers')) return;
+        const target = message.mentions.members.first();
+        const time = args[1];
+        if (!target || !time) return sendError(message.channel, 'Usage: `,mute @user 10m`');
+        
+        const msTime = ms(time);
+        if (!msTime) return sendError(message.channel, 'Invalid time.');
+
+        try {
+            await target.timeout(msTime, 'Muted by 97s');
+            sendEmbed(message.channel, 'MUTED', `🤐 **${target.user.tag}** muted for **${time}**.`, CONFIG.footer);
+        } catch (e) { sendError(message.channel, 'Hierarchy Error.'); }
+    }
+
+    if (cmd === 'unmute') {
+        if (!checkPerms(message, 'ModerateMembers')) return;
+        const target = message.mentions.members.first();
+        if (!target) return sendError(message.channel, 'Mention user.');
+        await target.timeout(null);
+        return sendEmbed(message.channel, 'UNMUTED', `🗣 **${target.user.tag}** released.`, CONFIG.footer);
     }
 
     if (cmd === 'purge') {
@@ -190,39 +240,19 @@ client.on('messageCreate', async (message) => {
         const amount = parseInt(args[0]);
         if (!amount || amount > 100) return sendError(message.channel, '1-100 only.');
         await message.channel.bulkDelete(amount, true);
+        message.channel.send(`🧹 Cleared ${amount} messages.`).then(m => setTimeout(() => m.delete(), 3000));
     }
 
-    // --- B. MUSIC ---
-    if (cmd === 'play' || cmd === 'p') {
-        if (!message.member.voice.channel) return sendError(message.channel, 'Join VC.');
-        if (!args[0]) return sendError(message.channel, 'Song/URL needed.');
-        
-        const song = args.join(' ');
-        const queue = musicQueue.get(message.guild.id) || [];
-        queue.push({ title: song });
-        musicQueue.set(message.guild.id, queue);
-
-        if (queue.length === 1) {
-            const embed = new EmbedBuilder()
-                .setDescription(`🎵 Now Playing: **${song}**`)
-                .setColor(CONFIG.COLOR)
-                .setThumbnail('https://i.giphy.com/media/S5Jsw8x8T5ZISuNBk6/giphy.gif');
-            return message.channel.send({ embeds: [embed] });
-        } else {
-            return sendEmbed(message.channel, 'Queued', `📝 **${song}** added.`);
-        }
-    }
-
-    if (cmd === 'skip') {
-        if (!musicQueue.has(message.guild.id)) return sendError(message.channel, 'Empty queue.');
-        return sendEmbed(message.channel, 'Skipped', '⏭ Track skipped.');
-    }
-
-    // --- C. ECONOMY ---
+    // --- C. ECONOMY (Cleaned up) ---
     if (cmd === 'bal') {
         const u = message.mentions.users.first() || message.author;
         const e = db.economy[u.id] || { cash: 0, bank: 0 };
-        return sendEmbed(message.channel, 'BALANCE', `💳 **User:** ${u.username}\n💰 **$${e.cash}**`);
+        // Clean "Bleed style" embed - No title, No footer, just data
+        const embed = new EmbedBuilder()
+            .setAuthor({ name: u.username, iconURL: u.displayAvatarURL() })
+            .setDescription(`**Cash:** $${e.cash}\n**Bank:** $${e.bank}\n**Total:** $${e.cash + e.bank}`)
+            .setColor(CONFIG.COLOR);
+        return message.channel.send({ embeds: [embed] });
     }
 
     if (cmd === 'gamble') {
@@ -234,40 +264,40 @@ client.on('messageCreate', async (message) => {
         if (Math.random() > 0.55) {
             e.cash += amt;
             saveDB();
-            return sendEmbed(message.channel, 'WIN', `🎲 Won **$${amt}**!`);
+            return sendEmbed(message.channel, null, `🎲 You won **$${amt}**`, null);
         } else {
             e.cash -= amt;
             saveDB();
-            return sendEmbed(message.channel, 'LOSS', `💸 Lost **$${amt}**.`);
+            return sendEmbed(message.channel, null, `💸 You lost **$${amt}**`, null);
         }
     }
 
-    // --- D. SOCIAL/UTIL ---
+    // --- D. SOCIAL/FUN ---
     if (cmd === 'afk') {
         db.afk[message.author.id] = args.join(' ') || 'AFK';
         saveDB();
-        return sendEmbed(message.channel, null, `💤 **${message.author.username}** is now AFK.`);
+        return sendEmbed(message.channel, null, `💤 **${message.author.username}** is now AFK.`, CONFIG.footer);
     }
 
-    if (cmd === 'embed') {
+    if (cmd === 'say') {
         if (!checkPerms(message, 'ManageMessages')) return;
-        try {
-            const json = JSON.parse(message.content.slice(CONFIG.PREFIX.length + 5));
-            if (!json.color) json.color = CONFIG.COLOR;
-            message.channel.send({ embeds: [json] });
-        } catch { sendError(message.channel, 'Invalid JSON.'); }
+        const text = args.join(' ');
+        if (!text) return;
+        message.delete();
+        message.channel.send(text);
     }
 
+    // --- E. HELP ---
     if (cmd === 'help') {
         const embed = new EmbedBuilder()
-            .setTitle('97s | LEVIATHAN')
-            .setDescription('**[>> Dashboard <<](https://97s-bot.com)**')
+            .setTitle('97s')
+            .setDescription(`**Prefix:** \`${CONFIG.PREFIX}\``)
             .setColor(CONFIG.COLOR)
             .addFields(
-                { name: '🛡️ Mod', value: '`,kick` `,ban` `,nuke` `,purge`', inline: true },
-                { name: '🎵 Music', value: '`,play` `,skip`', inline: true },
-                { name: '💰 Eco', value: '`,bal` `,gamble`', inline: true },
-                { name: '🔧 Util', value: '`,afk` `,embed` `,ping`', inline: true }
+                { name: 'System', value: '`,snipe` `,afk` `,ping` `,uptime`', inline: true },
+                { name: 'User', value: '`,av` `,banner` `,whois` `,role`', inline: true },
+                { name: 'Admin', value: '`,kick` `,ban` `,mute` `,unmute` `,purge`', inline: true },
+                { name: 'Eco', value: '`,bal` `,gamble`', inline: true }
             );
         return message.reply({ embeds: [embed] });
     }
@@ -275,10 +305,16 @@ client.on('messageCreate', async (message) => {
 
 function checkPerms(message, perm) {
     if (!message.member.permissions.has(PermissionsBitField.Flags[perm])) {
-        sendError(message.channel, `Need: \`${perm}\``);
+        sendError(message.channel, `Missing: \`${perm}\``);
         return false;
     }
     return true;
 }
+
+// Keep Render alive
+http.createServer((req, res) => {
+    res.write('97s Online');
+    res.end();
+}).listen(process.env.PORT || 3000);
 
 client.login(CONFIG.TOKEN);
