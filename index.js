@@ -430,5 +430,18 @@ function checkPerms(message, perm) {
     return true;
 }
 
+// --- 6. ERROR HANDLING & KEEPALIVE ---
+
+// Prevent crashes from unhandled errors
+process.on('unhandledRejection', (reason, p) => {
+    console.error('[ANTI-CRASH] Unhandled Rejection/Catch');
+    console.error(reason, p);
+});
+
+process.on('uncaughtException', (err, origin) => {
+    console.error('[ANTI-CRASH] Uncaught Exception');
+    console.error(err, origin);
+});
+
 http.createServer((req, res) => { res.write('97s Online'); res.end(); }).listen(process.env.PORT || 3000);
 client.login(CONFIG.TOKEN);
