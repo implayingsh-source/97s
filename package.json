@@ -1,14 +1,16 @@
 {
   "name": "97s-bot",
-  "version": "2.1.0",
-  "description": "Discord Bot for 97s Community",
+  "version": "6.0.0",
+  "description": "Discord Bot with Dashboard API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "dotenv": "^16.4.1"
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
   },
   "engines": {
     "node": ">=16.9.0"
