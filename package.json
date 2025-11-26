@@ -1,7 +1,7 @@
 {
   "name": "97s-bot",
-  "version": "6.0.0",
-  "description": "Discord Bot with Dashboard API",
+  "version": "7.0.0",
+  "description": "97s Leviathan - Pure Bot Edition",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,8 +9,9 @@
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.1",
-    "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "ms": "^2.1.3",
+    "axios": "^1.6.7",
+    "moment": "^2.30.1"
   },
   "engines": {
     "node": ">=16.9.0"
